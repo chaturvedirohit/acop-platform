@@ -23,8 +23,9 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isProtected = !request.nextUrl.pathname.startsWith('/login')
-  if (!user && isProtected) {
+  const publicPaths = ['/', '/login']
+  const isPublic = publicPaths.includes(request.nextUrl.pathname)
+  if (!user && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

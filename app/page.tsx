@@ -47,9 +47,9 @@ export default function LandingPage() {
             <Link href="/login" className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-7 py-3.5 rounded-xl font-semibold text-base transition-colors">
               Start for free <ArrowRight size={16} />
             </Link>
-            <Link href="/login" className="flex items-center gap-2 border border-slate-600 hover:border-slate-400 text-slate-300 px-7 py-3.5 rounded-xl font-medium text-base transition-colors">
-              View live demo
-            </Link>
+            <a href="#how-it-works" className="flex items-center gap-2 border border-slate-600 hover:border-slate-400 text-slate-300 px-7 py-3.5 rounded-xl font-medium text-base transition-colors">
+              See how it works
+            </a>
           </div>
           <p className="text-slate-500 text-sm mt-5">No credit card required · Free forever plan available</p>
         </div>
