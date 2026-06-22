@@ -17,8 +17,10 @@ import { createClient } from '@/lib/supabase-server'
 // It never goes to the browser. The user can never see it.
 //
 // RATE LIMITING: Each call costs real money (Claude API).
-// We add a simple guard: max 1 active process per ticket at a time.
+// Daily cap of 20 AI runs across all users — checked against agent_logs table.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const DAILY_AI_LIMIT = 20
 
 export async function POST(request: NextRequest) {
   // ── AUTH CHECK ──────────────────────────────────────────────────────────────
@@ -27,6 +29,24 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // ── DAILY BUDGET CAP ────────────────────────────────────────────────────────
+  // Count how many pipeline runs happened today (one run = one Triage Agent log)
+  // agent_logs has a row per agent per ticket — Triage Agent fires once per run
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  const { count } = await supabase
+    .from('agent_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('agent_name', 'Triage Agent')
+    .gte('created_at', todayStart.toISOString())
+
+  if ((count ?? 0) >= DAILY_AI_LIMIT) {
+    return NextResponse.json({
+      error: `Daily AI limit of ${DAILY_AI_LIMIT} runs reached. Resets at midnight. Contact admin to increase the limit.`
+    }, { status: 429 })
   }
 
   // ── PARSE REQUEST ───────────────────────────────────────────────────────────

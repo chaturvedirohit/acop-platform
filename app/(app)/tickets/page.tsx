@@ -52,6 +52,7 @@ export default function TicketsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [processResult, setProcessResult] = useState<{ ticket_id: string; resolution_text: string; was_escalated: boolean; confidence: number } | null>(null)
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -87,6 +88,8 @@ export default function TicketsPage() {
       if (data.success) {
         setProcessResult(data)
         load()
+      } else if (res.status === 429) {
+        setRateLimitError(data.error)
       } else {
         alert(`Processing failed: ${data.error}`)
       }
@@ -140,6 +143,15 @@ export default function TicketsPage() {
           </button>
         </div>
       </div>
+
+      {/* Rate limit warning */}
+      {rateLimitError && (
+        <div className="mb-4 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
+          <span className="text-lg leading-none">⚠</span>
+          <div className="flex-1">{rateLimitError}</div>
+          <button onClick={() => setRateLimitError(null)} className="text-amber-400 hover:text-amber-700 text-lg leading-none">✕</button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">
