@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import StatusBadge from '@/components/StatusBadge'
-import { Search, Plus, RefreshCw } from 'lucide-react'
+import { Search, Plus, RefreshCw, Bot, Loader2 } from 'lucide-react'
 
 interface Ticket {
   id: string
@@ -32,6 +32,8 @@ export default function TicketsPage() {
   const [showModal, setShowModal] = useState(false)
   const [newTicket, setNewTicket] = useState({ message: '', channel: 'chat', severity: 'medium', customer_id: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [processingId, setProcessingId] = useState<string | null>(null)
+  const [processResult, setProcessResult] = useState<{ ticket_id: string; resolution_text: string; was_escalated: boolean; confidence: number } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -53,6 +55,28 @@ export default function TicketsPage() {
     if (statusFilter !== 'all') result = result.filter(t => t.status === statusFilter)
     setFiltered(result)
   }, [search, channelFilter, statusFilter, tickets])
+
+  async function processWithAI(ticket: Ticket) {
+    if (processingId) return
+    setProcessingId(ticket.id)
+    try {
+      const res = await fetch('/api/process-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: ticket.id }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setProcessResult(data)
+        load()
+      } else {
+        alert(`Processing failed: ${data.error}`)
+      }
+    } catch (e) {
+      alert('Network error — please try again')
+    }
+    setProcessingId(null)
+  }
 
   async function createTicket() {
     setSubmitting(true)
@@ -116,7 +140,7 @@ export default function TicketsPage() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
-              {['Ticket ID', 'Message', 'Channel', 'Intent', 'Severity', 'Status', 'Confidence', 'Created'].map(h => (
+              {['Ticket ID', 'Message', 'Channel', 'Intent', 'Severity', 'Status', 'Confidence', 'Created', 'AI'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -139,11 +163,57 @@ export default function TicketsPage() {
                 <td className="px-4 py-3"><StatusBadge value={t.status} /></td>
                 <td className="px-4 py-3 text-slate-600">{t.confidence != null ? `${Math.round(t.confidence * 100)}%` : '—'}</td>
                 <td className="px-4 py-3 text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3">
+                  {t.status === 'open' || t.status === 'in_progress' ? (
+                    <button
+                      onClick={() => processWithAI(t)}
+                      disabled={processingId === t.id}
+                      title="Run AI agents on this ticket"
+                      className="flex items-center gap-1 px-2 py-1 bg-violet-600 text-white rounded text-xs font-medium hover:bg-violet-700 disabled:opacity-60"
+                    >
+                      {processingId === t.id
+                        ? <><Loader2 size={12} className="animate-spin" /> Processing...</>
+                        : <><Bot size={12} /> Process</>}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-slate-300">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {processResult && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${processResult.was_escalated ? 'bg-orange-100' : 'bg-green-100'}`}>
+                <Bot size={20} className={processResult.was_escalated ? 'text-orange-600' : 'text-green-600'} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {processResult.was_escalated ? 'Ticket Escalated to Human' : 'Ticket Auto-Resolved'}
+                </h2>
+                <p className="text-sm text-slate-500">Confidence: {Math.round(processResult.confidence * 100)}%</p>
+              </div>
+            </div>
+            {processResult.resolution_text && (
+              <div className="bg-slate-50 rounded-lg p-4 mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">AI Response to Customer</p>
+                <p className="text-sm text-slate-700 leading-relaxed">{processResult.resolution_text}</p>
+              </div>
+            )}
+            <button
+              onClick={() => setProcessResult(null)}
+              className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
