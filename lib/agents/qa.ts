@@ -1,18 +1,5 @@
 import { anthropic, HAIKU, logAgentRun } from '@/lib/anthropic'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 5 — QA AGENT
-//
-// Job: Review the resolution BEFORE it goes to the customer.
-// Like a quality checker on an assembly line — catches problems before shipping.
-//
-// What it checks (plain English):
-// 1. Hallucination — did the agent make up information not in the knowledge base?
-// 2. Compliance — does it mention unauthorised promises (refund amounts, timelines)?
-// 3. Brand tone — is it warm, professional? Not rude, not robotic?
-// 4. Safety — does it contain any harmful or offensive content?
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface QAResult {
   passed: boolean
   hallucination_detected: boolean
@@ -21,6 +8,11 @@ export interface QAResult {
   safety_issue: boolean
   qa_notes: string
   revised_resolution?: string
+}
+
+function parseJSON(text: string) {
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  return JSON.parse(cleaned)
 }
 
 export async function qaAgent(params: {
@@ -52,14 +44,14 @@ Check for:
 3. tone_issue: Is it cold, rude, dismissive, or unprofessional?
 4. safety_issue: Any offensive, discriminatory, or harmful content?
 
-Respond ONLY with valid JSON:
+Respond ONLY with valid JSON — no markdown, no code fences:
 {
   "passed": true_if_all_checks_pass,
   "hallucination_detected": true_or_false,
   "compliance_issue": true_or_false,
   "tone_issue": true_or_false,
   "safety_issue": true_or_false,
-  "qa_notes": "brief note on any issues found, or 'All checks passed'",
+  "qa_notes": "brief note on any issues found, or All checks passed",
   "revised_resolution": "corrected version if tone_issue is true, else null"
 }`
 
@@ -80,7 +72,7 @@ Is grounded in KB: ${params.is_grounded}`
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const result: QAResult = JSON.parse(text.trim())
+    const result: QAResult = parseJSON(text)
     const latency = Date.now() - start
 
     await logAgentRun({
@@ -105,7 +97,6 @@ Is grounded in KB: ${params.is_grounded}`
       ticket_id: params.ticket_id,
       latency_ms: Date.now() - start,
     })
-    // If QA itself fails, pass through (don't block the pipeline)
     return {
       passed: true,
       hallucination_detected: false,

@@ -1,19 +1,17 @@
 import { anthropic, HAIKU, logAgentRun } from '@/lib/anthropic'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 1 — TRIAGE AGENT
-//
-// Job: Read the customer's message and classify it.
-// Uses Claude Haiku (fast + cheap) because this is a simple classification task.
-// Returns structured JSON — intent, severity, segment.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface TriageResult {
   intent: string
   severity: 'low' | 'medium' | 'high' | 'critical'
   segment: 'standard' | 'premium' | 'vip'
   confidence: number
   summary: string
+}
+
+// Strip markdown code fences Claude sometimes wraps JSON in
+function parseJSON(text: string) {
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  return JSON.parse(cleaned)
 }
 
 export async function triageAgent(params: {
@@ -68,7 +66,7 @@ Past issues: ${params.past_issues?.join(', ') || 'none'}`
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const result: TriageResult = JSON.parse(text.trim())
+    const result: TriageResult = parseJSON(text)
     const latency = Date.now() - start
 
     await logAgentRun({
@@ -94,7 +92,6 @@ Past issues: ${params.past_issues?.join(', ') || 'none'}`
       ticket_id: params.ticket_id,
       latency_ms: Date.now() - start,
     })
-    // Safe fallback — never drop a ticket
     return { intent: 'general_inquiry', severity: 'medium', segment: 'standard', confidence: 0.3, summary: params.message }
   }
 }

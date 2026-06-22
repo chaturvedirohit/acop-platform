@@ -1,17 +1,5 @@
 import { anthropic, SONNET, logAgentRun } from '@/lib/anthropic'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 4 — RESOLUTION AGENT
-//
-// Job: Write the actual response that goes to the customer.
-// Uses Claude Sonnet (higher quality) because this is the most important output.
-//
-// KEY PRINCIPLE — Grounding:
-// The agent is FORCED to use the retrieved knowledge base articles.
-// If it can't find evidence in the articles, it must say so.
-// This prevents hallucination (making up answers that sound plausible but are wrong).
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface ResolutionResult {
   resolution_text: string
   confidence: number
@@ -19,6 +7,11 @@ export interface ResolutionResult {
   sources_used: string[]
   needs_escalation: boolean
   escalation_reason?: string
+}
+
+function parseJSON(text: string) {
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  return JSON.parse(cleaned)
 }
 
 export async function resolutionAgent(params: {
@@ -43,7 +36,7 @@ CRITICAL RULES:
 4. Keep response under 150 words
 5. If the articles don't have enough information, set needs_escalation to true
 
-Respond with ONLY valid JSON:
+Respond with ONLY valid JSON — no markdown, no code fences:
 {
   "resolution_text": "The actual response to send the customer",
   "confidence": 0.0_to_1.0,
@@ -73,7 +66,7 @@ Write a resolution response based only on the knowledge base articles above.`
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const result: ResolutionResult = JSON.parse(text.trim())
+    const result: ResolutionResult = parseJSON(text)
     const latency = Date.now() - start
 
     await logAgentRun({

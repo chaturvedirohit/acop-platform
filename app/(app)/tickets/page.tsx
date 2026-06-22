@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import StatusBadge from '@/components/StatusBadge'
-import { Search, Plus, RefreshCw, Bot, Loader2 } from 'lucide-react'
+import { Search, Plus, RefreshCw, Bot, Loader2, MessageSquare } from 'lucide-react'
 
 interface Ticket {
   id: string
@@ -21,6 +20,25 @@ interface Ticket {
 
 const CHANNELS = ['all', 'email', 'chat', 'whatsapp', 'voice', 'crm', 'app']
 const STATUSES = ['all', 'open', 'in_progress', 'resolved', 'escalated', 'closed']
+
+const SEVERITY_COLORS: Record<string, string> = {
+  low: 'bg-slate-100 text-slate-600',
+  medium: 'bg-yellow-100 text-yellow-700',
+  high: 'bg-orange-100 text-orange-700',
+  critical: 'bg-red-100 text-red-700',
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  open: 'bg-blue-100 text-blue-700',
+  in_progress: 'bg-purple-100 text-purple-700',
+  resolved: 'bg-green-100 text-green-700',
+  escalated: 'bg-orange-100 text-orange-700',
+  closed: 'bg-slate-100 text-slate-500',
+}
+
+const CHANNEL_ICONS: Record<string, string> = {
+  email: '✉️', chat: '💬', whatsapp: '📱', voice: '📞', crm: '🖥️', app: '📲',
+}
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -72,7 +90,7 @@ export default function TicketsPage() {
       } else {
         alert(`Processing failed: ${data.error}`)
       }
-    } catch (e) {
+    } catch {
       alert('Network error — please try again')
     }
     setProcessingId(null)
@@ -100,12 +118,18 @@ export default function TicketsPage() {
     load()
   }
 
+  const openCount = tickets.filter(t => t.status === 'open').length
+
   return (
-    <div className="p-8">
+    <div className="p-6">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Ticket Queue</h1>
-          <p className="text-slate-500 text-sm mt-1">{filtered.length} tickets</p>
+          <p className="text-slate-500 text-sm mt-1">
+            {filtered.length} tickets
+            {openCount > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">{openCount} need processing</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={load} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
@@ -136,57 +160,87 @@ export default function TicketsPage() {
         </select>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-100">
-            <tr>
-              {['Ticket ID', 'Message', 'Channel', 'Intent', 'Severity', 'Status', 'Confidence', 'Created', 'AI'].map(h => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {loading ? (
-              <tr><td colSpan={8} className="py-16 text-center text-slate-400">Loading tickets...</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="py-16 text-center text-slate-400">No tickets found. Click "New Ticket" to create one.</td></tr>
-            ) : filtered.map(t => (
-              <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">{t.ticket_id}</td>
-                <td className="px-4 py-3 max-w-xs">
-                  <p className="truncate text-slate-800 font-medium">{t.message}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Customer: {t.customer_id}</p>
-                </td>
-                <td className="px-4 py-3"><StatusBadge value={t.channel} /></td>
-                <td className="px-4 py-3 text-slate-500 text-xs">{t.intent ?? '—'}</td>
-                <td className="px-4 py-3"><StatusBadge value={t.severity} /></td>
-                <td className="px-4 py-3"><StatusBadge value={t.status} /></td>
-                <td className="px-4 py-3 text-slate-600">{t.confidence != null ? `${Math.round(t.confidence * 100)}%` : '—'}</td>
-                <td className="px-4 py-3 text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3">
-                  {t.status === 'open' || t.status === 'in_progress' ? (
+      {/* Ticket Cards */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-slate-400">
+          <Loader2 size={20} className="animate-spin mr-2" /> Loading tickets...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-20 text-slate-400">
+          <MessageSquare size={32} className="mx-auto mb-3 opacity-30" />
+          <p>No tickets found. Click "New Ticket" to create one.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(t => (
+            <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:border-indigo-200 hover:shadow-md transition-all">
+              <div className="flex items-start gap-4">
+
+                {/* Left: channel icon */}
+                <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-base flex-shrink-0 mt-0.5">
+                  {CHANNEL_ICONS[t.channel] || '📋'}
+                </div>
+
+                {/* Middle: main content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-mono text-xs text-slate-400">{t.ticket_id}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLORS[t.severity] || 'bg-slate-100 text-slate-600'}`}>
+                      {t.severity}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>
+                      {t.status.replace('_', ' ')}
+                    </span>
+                    {t.intent && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-600 font-medium">
+                        {t.intent.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-800 font-medium leading-snug">{t.message}</p>
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
+                    <span>Customer: {t.customer_id}</span>
+                    <span>·</span>
+                    <span>{t.channel}</span>
+                    <span>·</span>
+                    <span>{new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    {t.confidence != null && (
+                      <>
+                        <span>·</span>
+                        <span className="text-green-600 font-medium">AI: {Math.round(t.confidence * 100)}% confidence</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: action button */}
+                <div className="flex-shrink-0">
+                  {(t.status === 'open' || t.status === 'in_progress') ? (
                     <button
                       onClick={() => processWithAI(t)}
                       disabled={processingId === t.id}
-                      title="Run AI agents on this ticket"
-                      className="flex items-center gap-1 px-2 py-1 bg-violet-600 text-white rounded text-xs font-medium hover:bg-violet-700 disabled:opacity-60"
+                      className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 disabled:opacity-60 transition-colors whitespace-nowrap"
                     >
                       {processingId === t.id
                         ? <><Loader2 size={12} className="animate-spin" /> Processing...</>
-                        : <><Bot size={12} /> Process</>}
+                        : <><Bot size={12} /> Run AI</>}
                     </button>
                   ) : (
-                    <span className="text-xs text-slate-300">—</span>
+                    <span className={`px-2 py-1 rounded-lg text-xs font-medium ${t.status === 'resolved' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
+                      {t.status === 'resolved' ? '✓ Resolved' : '⚠ Escalated'}
+                    </span>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </div>
 
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* AI Result Modal */}
       {processResult && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
             <div className="flex items-center gap-3 mb-4">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${processResult.was_escalated ? 'bg-orange-100' : 'bg-green-100'}`}>
@@ -196,11 +250,11 @@ export default function TicketsPage() {
                 <h2 className="text-lg font-bold text-slate-900">
                   {processResult.was_escalated ? 'Ticket Escalated to Human' : 'Ticket Auto-Resolved'}
                 </h2>
-                <p className="text-sm text-slate-500">Confidence: {Math.round(processResult.confidence * 100)}%</p>
+                <p className="text-sm text-slate-500">AI Confidence: {Math.round(processResult.confidence * 100)}%</p>
               </div>
             </div>
             {processResult.resolution_text && (
-              <div className="bg-slate-50 rounded-lg p-4 mb-4">
+              <div className="bg-slate-50 rounded-lg p-4 mb-4 border border-slate-100">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">AI Response to Customer</p>
                 <p className="text-sm text-slate-700 leading-relaxed">{processResult.resolution_text}</p>
               </div>
@@ -215,8 +269,9 @@ export default function TicketsPage() {
         </div>
       )}
 
+      {/* New Ticket Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <h2 className="text-lg font-bold text-slate-900 mb-4">New Support Ticket</h2>
             <div className="space-y-3">

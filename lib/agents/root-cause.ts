@@ -1,20 +1,16 @@
 import { anthropic, HAIKU, logAgentRun } from '@/lib/anthropic'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 2 — ROOT CAUSE AGENT
-//
-// Job: Given the ticket + triage result, identify WHY the problem happened.
-// In a full production system this would query payment gateway APIs, CRM, logs.
-// Phase 2: Claude reasons from the ticket message + intent to infer root cause.
-// Phase 3: We'll add real API tool calls (payment gateway, CRM lookups).
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface RootCauseResult {
   root_cause: string
   root_cause_category: string
   confidence: number
   data_sources_checked: string[]
   recommended_action: string
+}
+
+function parseJSON(text: string) {
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  return JSON.parse(cleaned)
 }
 
 export async function rootCauseAgent(params: {
@@ -46,9 +42,7 @@ Common root causes by intent:
 - profile_visibility: privacy_setting_default, profile_incomplete, verification_pending
 - photo_upload_error: file_size_exceeded, format_not_supported, server_error
 - payment_issue: gateway_timeout, card_declined, duplicate_transaction
-- account_access: password_reset_needed, account_suspended, session_expired
-
-Be specific. "payment_callback_failed" is better than "payment issue".`
+- account_access: password_reset_needed, account_suspended, session_expired`
 
   const userMessage = `Message: "${params.message}"
 Intent: ${params.intent}
@@ -65,7 +59,7 @@ Past issues: ${params.past_issues?.join(', ') || 'none'}`
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const result: RootCauseResult = JSON.parse(text.trim())
+    const result: RootCauseResult = parseJSON(text)
     const latency = Date.now() - start
 
     await logAgentRun({
