@@ -39,8 +39,8 @@ export default function Sidebar() {
           <Zap size={16} className="text-white" />
         </div>
         <div>
-          <p className="text-sm font-bold leading-tight">ACOP</p>
-          <p className="text-xs text-slate-400 leading-tight">AI Ops Platform</p>
+          <p className="text-sm font-bold leading-tight">Reso</p>
+          <p className="text-xs text-slate-400 leading-tight">AI Support Platform</p>
         </div>
       </div>
 
