@@ -50,13 +50,16 @@ export default function KnowledgePage() {
 
   async function addArticle() {
     setSubmitting(true)
-    const supabase = createClient()
-    await supabase.from('knowledge_base').insert({
-      title: newArticle.title,
-      content: newArticle.content,
-      category: newArticle.category,
-      tags: newArticle.tags.split(',').map(t => t.trim()).filter(Boolean),
-      retrieval_count: 0,
+    // Goes through the API route so the article gets a semantic embedding on save
+    await fetch('/api/add-article', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newArticle.title,
+        content: newArticle.content,
+        category: newArticle.category,
+        tags: newArticle.tags.split(',').map(t => t.trim()).filter(Boolean),
+      }),
     })
     setShowModal(false)
     setNewArticle({ title: '', content: '', category: 'FAQ', tags: '' })

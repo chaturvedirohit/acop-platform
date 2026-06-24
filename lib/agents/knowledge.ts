@@ -1,19 +1,22 @@
 import { logAgentRun } from '@/lib/anthropic'
+import { embed } from '@/lib/embeddings'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AGENT 3 — KNOWLEDGE AGENT
+// AGENT 3 — KNOWLEDGE AGENT  (Phase 3: semantic search via pgvector)
 //
-// Job: Search the knowledge base and return the most relevant articles.
+// HOW RAG WORKS NOW (plain English):
+// 1. Take the ticket message + intent + root cause
+// 2. Turn that into a 384-number embedding with the gte-small model
+// 3. Ask Postgres (via the match_knowledge function) for the 3 articles whose
+//    embeddings are closest in meaning — NOT just matching keywords
+// 4. Return them as "context" for the Resolution Agent
 //
-// HOW RAG WORKS (plain English):
-// 1. Take the ticket message + intent
-// 2. Search the knowledge_base table for articles that match
-// 3. Return the top 3 most relevant articles as "context"
-// 4. The Resolution Agent then uses these articles to write its response
+// Why this beats the old keyword search: a ticket saying "membership not working"
+// now finds an article titled "Activation failure troubleshooting" because their
+// MEANINGS are close, even though they share no words.
 //
-// Phase 2: PostgreSQL full-text search (fast, no extra setup needed)
-// Phase 3: Upgrade to pgvector embeddings for semantic search
-//           (finds "activation failure" when searching "membership not working")
+// Fallback: if no articles have embeddings yet (backfill not run), we fall back
+// to the old ilike keyword search so the pipeline never breaks.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface KnowledgeResult {
@@ -25,6 +28,7 @@ export interface KnowledgeResult {
     relevance_reason: string
   }>
   context_text: string  // pre-formatted for the Resolution Agent
+  method: 'semantic' | 'keyword' | 'none'
 }
 
 export async function knowledgeAgent(params: {
@@ -39,48 +43,67 @@ export async function knowledgeAgent(params: {
     const { createClient } = await import('@/lib/supabase-server')
     const supabase = await createClient()
 
-    // Build search terms from intent and message
-    // e.g. "membership_activation" → ["membership", "activation"]
-    const intentWords = params.intent.replace(/_/g, ' ').split(' ')
-    const rootCauseWords = params.root_cause.replace(/_/g, ' ').split(' ')
-    const messageWords = params.message.toLowerCase().split(' ')
-      .filter(w => w.length > 4) // skip short words like "the", "and"
-      .slice(0, 5)
+    // ── SEMANTIC SEARCH (primary) ──────────────────────────────────────────
+    // Build a query string from everything we know, embed it, find nearest.
+    const queryText = `${params.message} | ${params.intent.replace(/_/g, ' ')} | ${params.root_cause.replace(/_/g, ' ')}`
 
-    const searchTerms = [...new Set([...intentWords, ...rootCauseWords, ...messageWords])]
+    let articles: any[] = []
+    let method: KnowledgeResult['method'] = 'none'
 
-    // Search knowledge base — try each search term and collect unique results
-    const seen = new Set<string>()
-    const articles: any[] = []
+    try {
+      const queryEmbedding = await embed(queryText)
+      const { data, error } = await supabase.rpc('match_knowledge', {
+        query_embedding: queryEmbedding,
+        match_count: 3,
+      })
+      if (error) throw error
+      if (data && data.length > 0) {
+        articles = data.map((a: any) => ({
+          ...a,
+          relevance_reason: `Semantic match (${Math.round(a.similarity * 100)}% similar in meaning)`,
+        }))
+        method = 'semantic'
+      }
+    } catch (semanticErr) {
+      // Vector search unavailable (extension off, no embeddings, etc.) — log and fall through
+      console.error('Semantic search failed, falling back to keyword:', semanticErr)
+    }
 
-    for (const term of searchTerms.slice(0, 4)) {
-      if (articles.length >= 3) break
-      const { data } = await supabase
-        .from('knowledge_base')
-        .select('id, title, content, category, tags, retrieval_count')
-        .or(`title.ilike.%${term}%,content.ilike.%${term}%,tags.cs.{${term}}`)
-        .limit(2)
+    // ── KEYWORD SEARCH (fallback) ──────────────────────────────────────────
+    if (articles.length === 0) {
+      const intentWords = params.intent.replace(/_/g, ' ').split(' ')
+      const messageWords = params.message.toLowerCase().split(' ').filter(w => w.length > 4).slice(0, 5)
+      const searchTerms = [...new Set([...intentWords, ...messageWords])]
+      const seen = new Set<string>()
 
-      if (data) {
-        for (const article of data) {
-          if (!seen.has(article.id) && articles.length < 3) {
-            seen.add(article.id)
-            articles.push(article)
-            // Increment retrieval count
-            await supabase
-              .from('knowledge_base')
-              .update({ retrieval_count: (article.retrieval_count || 0) + 1 })
-              .eq('id', article.id)
+      for (const term of searchTerms.slice(0, 4)) {
+        if (articles.length >= 3) break
+        const { data } = await supabase
+          .from('knowledge_base')
+          .select('id, title, content, category')
+          .or(`title.ilike.%${term}%,content.ilike.%${term}%`)
+          .limit(2)
+        if (data) {
+          for (const article of data) {
+            if (!seen.has(article.id) && articles.length < 3) {
+              seen.add(article.id)
+              articles.push({ ...article, relevance_reason: `Keyword match: "${term}"` })
+            }
           }
         }
       }
+      if (articles.length > 0) method = 'keyword'
     }
 
-    // Format context for Resolution Agent
+    // Bump retrieval_count for whatever we returned (best-effort)
+    for (const a of articles) {
+      const { data: cur } = await supabase.from('knowledge_base').select('retrieval_count').eq('id', a.id).single()
+      await supabase.from('knowledge_base').update({ retrieval_count: (cur?.retrieval_count || 0) + 1 }).eq('id', a.id)
+    }
+
+    // Format context for the Resolution Agent
     const context_text = articles.length > 0
-      ? articles.map((a, i) =>
-          `[Article ${i + 1}: ${a.title}]\n${a.content}`
-        ).join('\n\n---\n\n')
+      ? articles.map((a, i) => `[Article ${i + 1}: ${a.title}]\n${a.content}`).join('\n\n---\n\n')
       : 'No relevant knowledge base articles found. Use general best practices.'
 
     const result: KnowledgeResult = {
@@ -89,18 +112,19 @@ export async function knowledgeAgent(params: {
         title: a.title,
         content: a.content,
         category: a.category,
-        relevance_reason: `Matched search terms from intent: ${params.intent}`,
+        relevance_reason: a.relevance_reason,
       })),
       context_text,
+      method,
     }
 
     await logAgentRun({
       agent_name: 'Knowledge Agent',
-      action: `Retrieved ${articles.length} articles for intent: ${params.intent}`,
+      action: `Retrieved ${articles.length} articles (${method}) for intent: ${params.intent}`,
       status: 'success',
-      input: `${params.intent} | ${params.root_cause}`,
+      input: queryText,
       output: articles.map(a => a.title).join(', ') || 'No articles found',
-      confidence: articles.length > 0 ? 0.85 : 0.4,
+      confidence: method === 'semantic' ? 0.92 : method === 'keyword' ? 0.7 : 0.4,
       ticket_id: params.ticket_id,
       latency_ms: Date.now() - start,
     })
@@ -115,6 +139,6 @@ export async function knowledgeAgent(params: {
       ticket_id: params.ticket_id,
       latency_ms: Date.now() - start,
     })
-    return { articles: [], context_text: 'Knowledge retrieval unavailable.' }
+    return { articles: [], context_text: 'Knowledge retrieval unavailable.', method: 'none' }
   }
 }
