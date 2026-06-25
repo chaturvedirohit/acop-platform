@@ -10,7 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -23,7 +23,12 @@ export default function LoginPage() {
     setMessage('')
     const supabase = createClient()
 
-    if (mode === 'signup') {
+    if (mode === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (error) { setError(error.message) } else { setMessage('Password reset link sent. Check your email, then click the link to set a new password.') }
+    } else if (mode === 'signup') {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) { setError(error.message) } else { setMessage('Check your email to confirm your account, then sign in.') }
     } else {
@@ -85,10 +90,10 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
             <h1 className="text-2xl font-bold text-slate-900 mb-1">
-              {mode === 'signin' ? 'Welcome back' : 'Create account'}
+              {mode === 'signin' ? 'Welcome back' : mode === 'signup' ? 'Create account' : 'Reset password'}
             </h1>
             <p className="text-slate-500 text-sm mb-7">
-              {mode === 'signin' ? 'Sign in to your Reso dashboard' : 'Set up your Reso workspace in seconds'}
+              {mode === 'signin' ? 'Sign in to your Reso dashboard' : mode === 'signup' ? 'Set up your Reso workspace in seconds' : 'Enter your email and we\'ll send you a reset link'}
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -103,23 +108,36 @@ export default function LoginPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-slate-50"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPw ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    placeholder="Min 8 characters"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-slate-50 pr-10"
-                  />
-                  <button type="button" onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
+              {mode !== 'forgot' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-slate-700">Password</label>
+                    {mode === 'signin' && (
+                      <button
+                        type="button"
+                        onClick={() => { setMode('forgot'); setError(''); setMessage('') }}
+                        className="text-xs text-indigo-600 hover:underline font-medium"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      placeholder="Min 8 characters"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-slate-50 pr-10"
+                    />
+                    <button type="button" onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{error}</p>}
               {message && <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-3 py-2">{message}</p>}
@@ -129,17 +147,26 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors mt-1"
               >
-                {loading ? 'Please wait...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+                {loading ? 'Please wait...' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
               </button>
             </form>
 
             <div className="mt-5 text-center">
-              <button
-                onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setError(''); setMessage('') }}
-                className="text-sm text-indigo-600 hover:underline font-medium"
-              >
-                {mode === 'signin' ? "Don't have an account? Sign up free" : 'Already have an account? Sign in'}
-              </button>
+              {mode === 'forgot' ? (
+                <button
+                  onClick={() => { setMode('signin'); setError(''); setMessage('') }}
+                  className="text-sm text-indigo-600 hover:underline font-medium"
+                >
+                  Back to sign in
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setError(''); setMessage('') }}
+                  className="text-sm text-indigo-600 hover:underline font-medium"
+                >
+                  {mode === 'signin' ? "Don't have an account? Sign up free" : 'Already have an account? Sign in'}
+                </button>
+              )}
             </div>
           </div>
 
