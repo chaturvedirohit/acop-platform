@@ -24,13 +24,30 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false)
   const router = useRouter()
 
-  // Confirm we actually have a recovery session (the email link establishes one)
+  // Establish the recovery session from the email link, then confirm it exists.
+  // Newer Supabase links carry a "?code=" param that must be exchanged for a
+  // session; older links put tokens in the URL hash (handled automatically).
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getSession().then(({ data }) => {
+
+    async function init() {
+      const code = new URLSearchParams(window.location.search).get('code')
+      if (code) {
+        try {
+          await supabase.auth.exchangeCodeForSession(code)
+          // Clean the code out of the URL so a refresh doesn't re-trigger it
+          window.history.replaceState({}, '', '/reset-password')
+        } catch {
+          // fall through to the session check below
+        }
+      }
+
+      const { data } = await supabase.auth.getSession()
       if (data.session) setReady(true)
       else setError('This reset link is invalid or has expired. Request a new one from the sign-in page.')
-    })
+    }
+
+    init()
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
