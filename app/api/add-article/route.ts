@@ -30,10 +30,14 @@ export async function POST(request: NextRequest) {
 
   // Generate the embedding from title + content
   let embedding: number[] | null = null
-  try {
-    embedding = await embed(`${body.title}\n\n${body.content}`)
-  } catch (e) {
-    console.error('Embedding failed (article will still save, searchable by keyword):', e)
+  // Only embed when semantic search is enabled (the model is too heavy for
+  // Vercel's free tier). Otherwise the article saves and is found by keyword.
+  if (process.env.ENABLE_SEMANTIC_SEARCH === 'true') {
+    try {
+      embedding = await embed(`${body.title}\n\n${body.content}`)
+    } catch (e) {
+      console.error('Embedding failed (article will still save, searchable by keyword):', e)
+    }
   }
 
   const { error } = await supabase.from('knowledge_base').insert({

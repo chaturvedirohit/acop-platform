@@ -50,30 +50,36 @@ export async function knowledgeAgent(params: {
     let articles: any[] = []
     let method: KnowledgeResult['method'] = 'none'
 
-    try {
-      // Race the embedding against a timeout — if the model is slow to load on a
-      // cold start, fall back to keyword search rather than stalling the pipeline.
-      const queryEmbedding = await Promise.race([
-        embed(queryText),
-        new Promise<number[]>((_, reject) =>
-          setTimeout(() => reject(new Error('embed timeout')), 30000)
-        ),
-      ])
-      const { data, error } = await supabase.rpc('match_knowledge', {
-        query_embedding: queryEmbedding,
-        match_count: 3,
-      })
-      if (error) throw error
-      if (data && data.length > 0) {
-        articles = data.map((a: any) => ({
-          ...a,
-          relevance_reason: `Semantic match (${Math.round(a.similarity * 100)}% similar in meaning)`,
-        }))
-        method = 'semantic'
+    // Semantic search runs the gte-small model in-process. That's too heavy for
+    // Vercel's free-tier serverless memory, so it's OFF by default and the agent
+    // uses fast, reliable keyword search. To turn semantic search ON (running
+    // locally, or on a paid plan with more memory), set ENABLE_SEMANTIC_SEARCH=true.
+    if (process.env.ENABLE_SEMANTIC_SEARCH === 'true') {
+      try {
+        // Race the embedding against a timeout — if the model is slow to load on a
+        // cold start, fall back to keyword search rather than stalling the pipeline.
+        const queryEmbedding = await Promise.race([
+          embed(queryText),
+          new Promise<number[]>((_, reject) =>
+            setTimeout(() => reject(new Error('embed timeout')), 30000)
+          ),
+        ])
+        const { data, error } = await supabase.rpc('match_knowledge', {
+          query_embedding: queryEmbedding,
+          match_count: 3,
+        })
+        if (error) throw error
+        if (data && data.length > 0) {
+          articles = data.map((a: any) => ({
+            ...a,
+            relevance_reason: `Semantic match (${Math.round(a.similarity * 100)}% similar in meaning)`,
+          }))
+          method = 'semantic'
+        }
+      } catch (semanticErr) {
+        // Vector search unavailable (extension off, no embeddings, etc.) — log and fall through
+        console.error('Semantic search failed, falling back to keyword:', semanticErr)
       }
-    } catch (semanticErr) {
-      // Vector search unavailable (extension off, no embeddings, etc.) — log and fall through
-      console.error('Semantic search failed, falling back to keyword:', semanticErr)
     }
 
     // ── KEYWORD SEARCH (fallback) ──────────────────────────────────────────
