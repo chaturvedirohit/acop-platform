@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runPipeline } from '@/lib/agents/pipeline'
 import { createClient } from '@/lib/supabase-server'
 
+// The 7-agent pipeline (incl. loading the embedding model on a cold start) can
+// take well over Vercel's default 10s. Allow up to 60s (Hobby-plan max).
+export const maxDuration = 60
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API ROUTE: POST /api/process-ticket
 //
